@@ -1,0 +1,222 @@
+#!/bin/bash
+#
+# create-electron-react-app v0.1.0
+#
+# A script to create an electron app with react built-in.
+#
+# @https://www.codementor.io/randyfindley/how-to-build-an-electron-app-using-create-react-app-and-electron-builder-ss1k0sfer
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+LB='\033[1;34m'
+YL='\033[1;33m'
+NC='\033[0m' # No Color
+BOLD="\033[1m"
+NF=" \033[2m" # No Format
+NEXTLINE=`echo $'\n'`
+
+while getopts "ynh" OPTION
+do
+	case $OPTION in
+		y)
+			SKIP=1
+			;;
+		n)
+			NPM="--use-npm"
+			;;
+		h)
+			echo -e "\nHow to use:"
+			echo -e "\nYou can use the following options. Please provide the folder last."
+			echo -e "[FOLDER]	Provide last after all arguments. (like ./create-react-electron-app -n -y [FOLDER])"
+			echo -e "-y				Skip all user confirmations"
+			echo -e "-f 			Use npm instead of yarn (also in the config files)"
+			echo -e "-h 			Show this help"
+			exit
+			;;
+	esac
+done
+
+shift $((OPTIND-1))
+
+echo -e "${YL}create-react-electron-app v0.1.0${NC}"
+
+if [ $1 ]; then
+	# check if should accept by default
+	if [ -z $SKIP ]; then
+		# ask for confirmation on current folder
+		read -n1 -esp "$(echo -e $LB)App will be installed in '$1'. Continue? y/n$(echo -e $NC) ${NEXTLINE}" D
+		if [ $D = "y" ]; then
+			FOLDER="$1"
+		else
+			echo -e "${NEXTLINE}${RED}Aborted.${NC}"
+			exit 1
+		fi
+	else
+		FOLDER="$1"
+	fi
+else
+	# check if should accept by default
+	if [ -z $SKIP ]; then
+		# ask for user confirmation on no folder
+		read -n1 -esp "$(echo -e $LB)You have not provided a folder name. App will be installed in the $(echo -e $BOLD)current directory$(echo -e $NF). Continue? y/n$(echo -e $NC) ${NEXTLINE}" D
+		if [ $D = "y" ]; then
+			FOLDER="."
+		else
+			echo -e "${NEXTLINE}${RED}Aborted.${NC}"
+			exit 1
+		fi
+	else
+		FOLDER="."
+	fi
+fi
+
+# # create the react-app
+echo -e "${LB}Starting create-react-app...${NC}"
+npx create-react-app "$FOLDER" "$NPM"
+
+# go into the react project folder to do magic
+cd "$FOLDER"
+
+echo -e "${LB}Adding core dependencies...${NC}"
+# add electron and dependencies
+if [ -z $NPM ]; then
+	yarn add electron electron-builder --dev
+	yarn add wait-on concurrently --dev
+	yarn add electron-is-dev
+	yarn add @rescripts/cli @rescripts/rescript-env --dev
+else
+	npm i --save-dev electron electron-builder
+	npm i --save-dev wait-on concurrently
+	npm i --save electron-is-dev
+	npm i --save-dev @rescripts/cli @rescripts/rescript-env
+fi
+
+echo -e "${LB}Creating electron.js file...${NC}"
+/bin/cat <<EOM >"public/electron.js"
+const electron = require('electron');
+const app = electron.app;
+const BrowserWindow = electron.BrowserWindow;
+
+const path = require('path');
+const isDev = require('electron-is-dev');
+
+let mainWindow;
+
+function createWindow() {
+  mainWindow = new BrowserWindow(
+		{
+			width: 900,
+			height: 680,
+			webPreferences: {
+				nodeIntegration: true
+			}
+		}
+	);
+  mainWindow.loadURL(isDev ? 'http://localhost:3000' : \`file://\${path.join(__dirname, '../build/index.html')}\`);
+  if (isDev) {
+    // Open the DevTools.
+    //BrowserWindow.addDevToolsExtension('<location to your react chrome extension>');
+    mainWindow.webContents.openDevTools();
+  }
+  mainWindow.on('closed', () => mainWindow = null);
+}
+
+app.on('ready', createWindow);
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+});
+
+app.on('activate', () => {
+  if (mainWindow === null) {
+    createWindow();
+  }
+});
+EOM
+
+echo -e "${LB}Customizing package.json...${NC}"
+# set correct command calls
+if [ -z $NPM ]; then
+	ELECTRONDEV="\"electron-dev\\\"\: \\\"concurrently \\\\\"BROWSER=none yarn start\\\\\\\" \\\\\"wait-on http:\/\/localhost:3000 && electron .\\\\\"\\\","
+else
+	ELECTRONDEV="\\\"electron-dev\\\"\: \\\"concurrently \\\\\"BROWSER=none npm run start\\\\\" \\\\\"wait-on http:\/\/localhost:3000 && electron .\\\\\"\\\","
+fi
+
+# add the electron dev script
+sed -i '' '/react-scripts start/i \
+ '"$ELECTRONDEV"'
+' "package.json"
+
+# add the electron.js declaration to the package file
+MAIN="\"main\"\: \"public/electron.js\","
+sed -i '' '/"scripts": {/i \
+\	'"$MAIN"'
+' "package.json"
+
+# adding more packages
+echo -e "${LB}Adding more dependencies...${NC}"
+if [ -z $NPM ]; then
+	yarn add electron-builder typescript --dev
+else
+	npm i --save-dev electron-builder typescript
+fi
+
+sed -i '' '/"main": /i \
+\	"homepage": "./", \
+' package.json
+
+#replace the old scripts with re-scripts
+sed -i '' 's/react-scripts/rescripts/g' "package.json"
+
+if [ -z ]; then
+	PACKCOMMAND="npm run build"
+else
+	PACKCOMMAND="yarn build"
+fi
+# add scripts to package.json
+sed -i '' '/"start": /i \
+\	\	"postinstall": "electron-builder install-app-deps", \
+\	\	"preelectron-pack": "'"$PACKCOMMAND"'", \
+\	\	"electron-pack": "electron-builder --", \
+' package.json
+
+# add metadata to file
+sed -i '' '/"dependencies"/i \
+\	"author": {\
+\	\	"name": "Your Name",\
+\	\	"email": "your.email@domain.com",\
+\	\	"url": "https://your-website.com"\
+\	},\
+\	"build": {\
+\	\	"appId": "com.my-website.my-app",\
+\	\	"productName": "MyApp",\
+\	\	"copyright": "Copyright © 2019 ${author}",\
+\	\	"mac": {\
+\	\	"category": "public.app-category.utilities"\
+\	\	},\
+\	\	"files": [\
+\	\	\	"build/**/*",\
+\	\	\	"node_modules/**/*"\
+\	\	],\
+\	\	"directories": {\
+\	\	\	"buildResources": "assets"\
+\	\	}\
+\	},\
+' package.json
+
+echo -e "${LB}Creating .webpack.config.js file...${NC}"
+/bin/cat <<EOM >"./.webpack.config.js"
+module.exports = config => {
+  config.target = 'electron-renderer';
+  return config;
+}
+EOM
+
+echo -e "${LB}Creating .rescriptsrc.js file...${NC}"
+echo "module.exports = [require.resolve('./.webpack.config.js')]" > ./.rescriptsrc.js
+
+cd $FOLDER
+echo -e "${GREEN}All done. Start with 'npm run electron-dev' or 'yarn electron-dev'."
