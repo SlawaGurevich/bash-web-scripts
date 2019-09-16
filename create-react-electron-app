@@ -30,7 +30,7 @@ do
 			echo -e "\nYou can use the following options. Please provide the folder last."
 			echo -e "[FOLDER]	Provide last after all arguments. (like ./create-react-electron-app -n -y [FOLDER])"
 			echo -e "-y				Skip all user confirmations"
-			echo -e "-f 			Use npm instead of yarn (also in the config files)"
+			echo -e "-n 			Use npm instead of yarn (also in the config files)"
 			echo -e "-h 			Show this help"
 			exit
 			;;
